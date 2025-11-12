@@ -7,8 +7,6 @@ from PySide6.QtCore import Qt, QTimer, Slot
 from PySide6.QtGui import QFont, QKeyEvent, QIcon
 
 from ytmusicapi import YTMusic
-from ytmusicapi.models import Lyrics, TimedLyrics, LyricLine
-from ytmusicapi.exceptions import YTMusicUserError
 import yt_dlp, json, shutil, subprocess
 from typing import Optional, TypedDict, Union, Any
 
@@ -17,9 +15,9 @@ version : str = '2025.11.05'
 
 file_dir : str = os.path.dirname(os.path.realpath(__file__))
 frozen_dir = os.path.dirname(sys.executable)
-executable_dir : str = os.path.dirname(os.path.realpath(__file__))
+executable_dir : str = file_dir
 if getattr(sys, 'frozen', False):
-    executable_dir = os.path.dirname(sys.executable)
+    executable_dir = frozen_dir
 
 os.chdir(executable_dir)
 
@@ -70,10 +68,11 @@ class MusicPlayer(QWidget):
             with open(self.local_playlist_path, 'w') as file:
                 json.dump({}, file)
 
-        self.use_cookies : bool = False
 
         self.config: configparser.ConfigParser = configparser.ConfigParser()
         self.config.read(os.path.join(executable_dir, 'app.ini'))
+        self.use_cookies : bool = self.config.getboolean('user', 'use_cookies', fallback=False)
+        self.browser : str = self.config.get('user', 'browser', fallback='firefox')
 
         self.recents_path : str = os.path.join(instance_path, 'playlist_recents.json')
 
@@ -166,7 +165,12 @@ class MusicPlayer(QWidget):
             self.tracks = [{'title': entry, 'url': os.path.join(playlist_url, entry)} for entry in sorted(os.listdir(playlist_url))]
             self.update_track_list()
         else:
-            ydl_opts : dict = {'extract_flat': True, 'skip_download': True}
+            ydl_opts : dict = {
+                'extract_flat': True,
+                'skip_download': True
+            }
+            if self.use_cookies:
+                ydl_opts['cookiesfrombrowser'] = (self.browser,)
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info : dict = ydl.extract_info(playlist_url, download=False)
                 self.tracks = [{'title': entry['title'], 'url': entry['url']} for entry in info['entries']]
@@ -229,7 +233,7 @@ class MusicPlayer(QWidget):
                 else:
                     self.entry_filter.clear()
                 return
-            case '/FIX':
+            case '/COOKIES':
                 self.use_cookies = not self.use_cookies
                 self.entry_filter.clear()
                 return
@@ -280,13 +284,7 @@ class MusicPlayer(QWidget):
 
         if self.track_url:
             if self.track_url.startswith('https://music.youtube.com/watch?v=') or self.track_url.startswith('https://youtube.com/watch?v='):
-                video_id : str = self.track_url.split('=')[-1]
-                try:
-                    details : dict = self.yt_music_api.get_song(video_id)
-                    if details:
-                        self.label_track.setText(details['videoDetails']['title'])
-                except (KeyError, YTMusicUserError):
-                    pass
+                pass
             else:
                 self.label_track.setText(os.path.basename(self.track_url))
 

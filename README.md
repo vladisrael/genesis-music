@@ -4,7 +4,7 @@
 
 <h1 align="center">Genesis Music Player</h1>
 
-**Version 2025.11.05**
+**Version 2025.11.12**
 
 <p align="center">
   <strong>A lightweight Qt6 YouTube Music playlist manager & MPV player</strong>
@@ -31,7 +31,7 @@
 ### Prerequisites
 - Python 3.9+
 - [MPV](https://mpv.io/installation/) (installed and in `PATH`)
-- Firefox (optional, for `/FIX` cookie support)
+- Firefox (optional, for `/COOKIES` cookie support)
 
 ### Install via pip
 
@@ -69,4 +69,4 @@ Type these in the command input field:
 | /ADD    | Add a YouTube playlist URL or local folder |
 | /CACHE  | Save current YouTube playlist as local JSON (fast reload) |
 | /RELOAD | Refresh the playlist dropdown |
-| /FIX    | Toggle Firefox cookies in MPV (for restricted videos) |
+| /COOKIES| Toggle Firefox cookies in MPV (for restricted videos) |
