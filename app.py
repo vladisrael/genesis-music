@@ -11,7 +11,7 @@ import yt_dlp, json, shutil, subprocess
 from typing import Optional, TypedDict, Union, Any
 
 
-version : str = '2025.11.05'
+version : str = '2025.11.12'
 
 file_dir : str = os.path.dirname(os.path.realpath(__file__))
 frozen_dir = os.path.dirname(sys.executable)
