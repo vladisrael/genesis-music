@@ -4,7 +4,7 @@
 
 <h1 align="center">Genesis Music Player</h1>
 
-**Version 2025.11.12**
+**Version 2025.11.30**
 
 <p align="center">
   <strong>A lightweight Qt6 YouTube Music playlist manager & MPV player</strong>
@@ -73,4 +73,5 @@ Type these in the command input field:
 | /ADD    | Add a YouTube playlist URL or local folder |
 | /CACHE  | Save current YouTube playlist as local JSON (fast reload) |
 | /RELOAD | Refresh the playlist dropdown |
-| /COOKIES| Toggle Firefox cookies in MPV (for restricted videos) |
+| /COOKIES | Toggle browser cookies in MPV (for restricted videos) |
+| /DOWNLOAD | Download YouTube playlist |

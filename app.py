@@ -1,17 +1,18 @@
 import os, sys, threading, locale, configparser, glob
 from PySide6.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QProgressDialog,
     QComboBox, QLineEdit, QListWidget, QPushButton, QSlider, QScrollBar, QListWidgetItem
 )
 from PySide6.QtCore import Qt, QTimer, Slot
 from PySide6.QtGui import QFont, QKeyEvent, QIcon
 
+from yt_dlp.dependencies import yt_dlp_ejs
 from ytmusicapi import YTMusic
 import yt_dlp, json, shutil, subprocess
 from typing import Optional, TypedDict, Union, Any
 
 
-version : str = '2025.11.12'
+version : str = '2025.11.30'
 
 file_dir : str = os.path.dirname(os.path.realpath(__file__))
 frozen_dir = os.path.dirname(sys.executable)
@@ -22,7 +23,8 @@ if getattr(sys, 'frozen', False):
 os.chdir(executable_dir)
 
 instance_path : str = os.path.join(executable_dir, 'instance')
-os.makedirs(instance_path, exist_ok=True)
+download_path : str = os.path.join(instance_path, 'downloaded')
+os.makedirs(download_path, exist_ok=True)
 
 
 class Track(TypedDict):
@@ -104,14 +106,72 @@ class MusicPlayer(QWidget):
         with open(self.local_playlist_path, 'r') as file:
             self.playlist.update({f'LOCAL - {k}': v for k, v in json.load(file).items()})
 
-        for f in glob.glob(os.path.join(instance_path, 'cache_*.json')):
-            name : str = os.path.splitext(os.path.basename(f))[0].replace('cache_', '')
-            self.playlist[f'CACHE - {name}'] = f
+        for file in glob.glob(os.path.join(instance_path, 'cache_*.json')):
+            name : str = os.path.splitext(os.path.basename(file))[0].replace('cache_', '')
+            self.playlist[f'CACHE - {name}'] = file
+
+        for file in glob.glob(os.path.join(instance_path, 'download_*.json')):
+            name : str = os.path.splitext(os.path.basename(file))[0].replace('download_', '')
+            self.playlist[f'DOWNLOAD - {name}'] = file
 
         self.playlist['RECENTS'] = 'RECENTS'
         self.playlist['SEARCH YT'] = 'SEARCH'
         self.playlist['SEARCH PLAYLIST'] = 'SEARCH_PLAYLIST'
         self.playlist_titles = list(self.playlist.keys())
+
+    def download_playlist(self, playlist_url: str, playlist_name:str) -> None:
+        progress : QProgressDialog = QProgressDialog(f'Downloading playlist {playlist_name}', 'Cancel', 0, 0)
+        progress.setWindowTitle('Downloading')
+        progress.setCancelButton(None)
+        progress.setMinimumDuration(0)
+        progress.show()
+
+        QApplication.processEvents()
+
+        ydl_opts : yt_dlp._Params = {
+            'format': 'bestaudio/best',
+            'outtmpl': f'{download_path}/%(id)s.%(ext)s',
+            'ignoreerrors': True,
+            'download_archive': os.path.join(instance_path, 'downloaded.txt'),
+            'restrictfilenames': True,
+            'postprocessors': [
+                {
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '0',
+                },
+                {
+                    'key': 'EmbedThumbnail',
+                },
+                {
+                    'key': 'FFmpegMetadata',
+                },
+            ],
+            'writethumbnail': True,
+        }
+
+        tracks: list[Track] = []
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            playlist_info : dict = ydl.extract_info(playlist_url, download=False)
+            progress.setMaximum(len(playlist_info['entries']))
+            QApplication.processEvents()
+            for i, entry in enumerate(playlist_info['entries']):
+                if entry is None:
+                    continue
+
+                video_id : str = entry['id']
+                title : str = entry['title']
+                info : yt_dlp.extractor.common._InfoDict = ydl.extract_info(video_id, download=True)
+                tracks.append({
+                    'title': title,
+                    'url': f'{download_path}/{video_id}.mp3'
+                })
+                progress.setValue(i)
+                QApplication.processEvents()
+
+        with open(os.path.join(instance_path, f'download_{playlist_name}.json'), 'w') as file:
+            json.dump(tracks, file, indent=4, ensure_ascii=False)
+        progress.close()
 
     def init_ui(self) -> None:
         layout : QVBoxLayout = QVBoxLayout()
@@ -140,9 +200,9 @@ class MusicPlayer(QWidget):
 
     @Slot()
     def load_selected_playlist(self) -> None:
-        index = self.combo_playlist.currentIndex()
+        index : int = self.combo_playlist.currentIndex()
         self.selected_playlist = self.playlist_titles[index]
-        playlist_url = self.playlist[self.selected_playlist]
+        playlist_url : str = self.playlist[self.selected_playlist]
         self.load_playlist(playlist_url)
 
     def load_playlist(self, playlist_url:str) -> None:
@@ -165,7 +225,7 @@ class MusicPlayer(QWidget):
             self.tracks = [{'title': entry, 'url': os.path.join(playlist_url, entry)} for entry in sorted(os.listdir(playlist_url))]
             self.update_track_list()
         else:
-            ydl_opts : dict = {
+            ydl_opts : yt_dlp._Params = {
                 'extract_flat': True,
                 'skip_download': True
             }
@@ -203,9 +263,11 @@ class MusicPlayer(QWidget):
                 with open(os.path.join(instance_path, f'cache_{self.selected_playlist}.json'), 'w', encoding='utf-8') as file:
                     json.dump(self.tracks, file, indent=4, ensure_ascii=False)
                 self.reload_playlists()
+                self.entry_filter.clear()
                 return
             case '/RELOAD':
                 self.reload_playlists()
+                self.entry_filter.clear()
                 return
             case '/ADD':
                 dialog : AddPlaylistDialog = AddPlaylistDialog(self)
@@ -216,7 +278,7 @@ class MusicPlayer(QWidget):
 
                     json_path : str = os.path.join(instance_path, 'playlists_local.json')
                     if url.startswith('http'):
-                        json_path = os.path.join(instance_path, "playlists_yt.json")
+                        json_path = os.path.join(instance_path, 'playlists_yt.json')
 
                     playlists : dict[str, str] = {}
                     if os.path.exists(json_path):
@@ -237,6 +299,13 @@ class MusicPlayer(QWidget):
                 self.use_cookies = not self.use_cookies
                 self.entry_filter.clear()
                 return
+
+            case '/DOWNLOAD':
+                if self.selected_playlist.startswith('YT - '):
+                    playlist_url : str = self.playlist[self.selected_playlist]
+                    self.download_playlist(playlist_url, self.selected_playlist.lstrip('YT - '))
+                    self.reload_playlists()
+                    return
 
         match self.selected_playlist:
             case 'SEARCH YT':
@@ -283,15 +352,12 @@ class MusicPlayer(QWidget):
         self.label_track.setText(self.track_text)
 
         if self.track_url:
-            if self.track_url.startswith('https://music.youtube.com/watch?v=') or self.track_url.startswith('https://youtube.com/watch?v='):
-                pass
-            else:
-                self.label_track.setText(os.path.basename(self.track_url))
 
             self.add_to_recents({
                 'title': self.track_text,
                 'url': self.track_url
             })
+
             mpv_path : Optional[str] = shutil.which('mpv')
             if not mpv_path:
                 raise RuntimeError('MPV not found in PATH.')
